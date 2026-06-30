@@ -89,9 +89,9 @@ add_hook() {
     echo "✅ Added hook for $event → $state"
 }
 
-# Add hooks for traex lifecycle events. Keep completion/end hooks as idle rather
-# than release: TraeX exits back to the shell in the same pane, and Herdr should
-# show that the prior agent run is done/idle instead of leaving a working source.
+# Add hooks for traex lifecycle events. Completion hooks return the active
+# session to idle, while SessionEnd releases Herdr authority so exited TraeX
+# sessions disappear from the agents pane.
 add_hook "SessionStart" "idle"
 add_hook "UserPromptSubmit" "working"
 add_hook "PreToolUse" "working"
@@ -100,7 +100,7 @@ add_hook "PostToolUseFailure" "idle"
 add_hook "PermissionRequest" "blocked"
 add_hook "Notification" "idle"
 add_hook "Stop" "idle"
-add_hook "SessionEnd" "idle"
+add_hook "SessionEnd" "release"
 
 # Remove empty event entries left by old hook cleanup.
 SETTINGS=$(echo "$SETTINGS" | jq '.hooks |= with_entries(select(.value | length > 0))')

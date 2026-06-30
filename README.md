@@ -66,7 +66,8 @@ The hook reports TraeX semantic state directly to Herdr through Herdr's local so
 - `PostToolUse` / `PostToolUseFailure` → `idle`
 - `PermissionRequest` → `blocked`
 - `Notification` → `idle`
-- `Stop` / `SessionEnd` → `idle`
+- `Stop` → `idle`
+- `SessionEnd` → `release` so exited TraeX sessions are removed from Herdr's agents pane
 
 The hook forwards TraeX `session_id` values to Herdr when TraeX includes them in hook payloads.
 
