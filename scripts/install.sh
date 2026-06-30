@@ -86,6 +86,7 @@ add_hook "PreToolUse" "working"
 add_hook "PostToolUse" "idle"
 add_hook "PostToolUseFailure" "idle"
 add_hook "PermissionRequest" "blocked"
+add_hook "Notification" "idle"
 add_hook "Stop" "idle"
 add_hook "SessionEnd" "release"
 

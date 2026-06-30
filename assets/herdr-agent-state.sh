@@ -3,11 +3,76 @@
 # managed by herdr; reinstalling or updating the plugin overwrites this file.
 # add custom hooks beside this file instead of editing it.
 # HERDR_INTEGRATION_ID=traex
-# HERDR_INTEGRATION_VERSION=2
+# HERDR_INTEGRATION_VERSION=3
 #
 # Reports traex agent state changes to herdr. Registered as a Command hook
-# in ~/.traex/settings.json by the herdr plugin install action and
+# in ~/.trae/settings.json by the herdr plugin install action and
 # invoked by traex's hook system on lifecycle events.
+
+set -eu
+
+# Ensure we always release state when the process exits
+cleanup() {
+    if [ -n "${HERDR_PANE_ID:-}" ] && [ -n "${HERDR_SOCKET_PATH:-}" ] && [ "${HERDR_ENV:-}" = "1" ]; then
+        # Send idle and release on exit
+        python3 - <<END &>/dev/null
+import os
+import socket
+import time
+import random
+source = "herdr:traex"
+pane_id = os.environ.get("HERDR_PANE_ID")
+socket_path = os.environ.get("HERDR_SOCKET_PATH")
+if pane_id and socket_path:
+    # Send idle first
+    try:
+        request_id = f"{source}:{int(time.time() * 1000)}:{random.randrange(1_000_000):06d}"
+        report_seq = time.time_ns()
+        request = {
+            "id": request_id,
+            "method": "pane.report_agent",
+            "params": {
+                "pane_id": pane_id,
+                "source": source,
+                "agent": "traex",
+                "state": "idle",
+                "seq": report_seq,
+            },
+        }
+        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        client.settimeout(0.2)
+        client.connect(socket_path)
+        client.sendall((json.dumps(request) + "\n").encode())
+        client.close()
+    except Exception:
+        pass
+
+    # Send release
+    try:
+        request_id = f"{source}:{int(time.time() * 1000)}:{random.randrange(1_000_000):06d}"
+        report_seq = time.time_ns()
+        request = {
+            "id": request_id,
+            "method": "pane.release_agent",
+            "params": {
+                "pane_id": pane_id,
+                "source": source,
+                "agent": "traex",
+                "seq": report_seq,
+            },
+        }
+        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        client.settimeout(0.2)
+        client.connect(socket_path)
+        client.sendall((json.dumps(request) + "\n").encode())
+        client.close()
+    except Exception:
+        pass
+END
+    fi
+}
+trap cleanup EXIT HUP INT TERM
+
 
 set -eu
 
