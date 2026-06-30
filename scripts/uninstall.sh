@@ -31,19 +31,16 @@ fi
 SETTINGS_PATH="$TRAEX_DIR/hooks.json"
 if [ -f "$SETTINGS_PATH" ]; then
     SETTINGS=$(cat "$SETTINGS_PATH")
-    quoted_hook_path=$(printf '%s' "$HOOK_PATH" | sed 's/"/\\"/g')
-    command_prefix="bash \"$quoted_hook_path\""
 
     # Function to remove Herdr hooks from an event
     remove_hooks() {
         local event="$1"
-        # Filter out entries that contain the Herdr hook command
-        SETTINGS=$(echo "$SETTINGS" | jq --arg event "$event" --arg cmd_prefix "$command_prefix" '
+        # Filter out entries whose commands reference the Herdr hook path.
+        SETTINGS=$(echo "$SETTINGS" | jq --arg event "$event" --arg hook_path "$HOOK_PATH" '
             if .hooks[$event] then
                 .hooks[$event] |= map(
-                    .hooks |= map(
-                        select(.command | startswith($cmd_prefix) | not)
-                    ) | select(.hooks | length > 0)
+                    .hooks |= map(select((.command // "") | contains($hook_path) | not))
+                    | select(.hooks | length > 0)
                 )
             else
                 .
@@ -52,12 +49,9 @@ if [ -f "$SETTINGS_PATH" ]; then
     }
 
     # Remove all Herdr hooks
-    remove_hooks "SessionStart"
-    remove_hooks "UserPromptSubmit"
-    remove_hooks "PreToolUse"
-    remove_hooks "PermissionRequest"
-    remove_hooks "Stop"
-    remove_hooks "SessionEnd"
+    for event in SessionStart UserPromptSubmit PreToolUse PostToolUse PostToolUseFailure PermissionRequest Notification Stop SessionEnd; do
+        remove_hooks "$event"
+    done
 
     # Remove empty event entries
     SETTINGS=$(echo "$SETTINGS" | jq '

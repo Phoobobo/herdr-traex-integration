@@ -3,76 +3,11 @@
 # managed by herdr; reinstalling or updating the plugin overwrites this file.
 # add custom hooks beside this file instead of editing it.
 # HERDR_INTEGRATION_ID=traex
-# HERDR_INTEGRATION_VERSION=3
+# HERDR_INTEGRATION_VERSION=4
 #
 # Reports traex agent state changes to herdr. Registered as a Command hook
-# in ~/.trae/settings.json by the herdr plugin install action and
-# invoked by traex's hook system on lifecycle events.
-
-set -eu
-
-# Ensure we always release state when the process exits
-cleanup() {
-    if [ -n "${HERDR_PANE_ID:-}" ] && [ -n "${HERDR_SOCKET_PATH:-}" ] && [ "${HERDR_ENV:-}" = "1" ]; then
-        # Send idle and release on exit
-        python3 - <<END &>/dev/null
-import os
-import socket
-import time
-import random
-source = "herdr:traex"
-pane_id = os.environ.get("HERDR_PANE_ID")
-socket_path = os.environ.get("HERDR_SOCKET_PATH")
-if pane_id and socket_path:
-    # Send idle first
-    try:
-        request_id = f"{source}:{int(time.time() * 1000)}:{random.randrange(1_000_000):06d}"
-        report_seq = time.time_ns()
-        request = {
-            "id": request_id,
-            "method": "pane.report_agent",
-            "params": {
-                "pane_id": pane_id,
-                "source": source,
-                "agent": "traex",
-                "state": "idle",
-                "seq": report_seq,
-            },
-        }
-        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        client.settimeout(0.2)
-        client.connect(socket_path)
-        client.sendall((json.dumps(request) + "\n").encode())
-        client.close()
-    except Exception:
-        pass
-
-    # Send release
-    try:
-        request_id = f"{source}:{int(time.time() * 1000)}:{random.randrange(1_000_000):06d}"
-        report_seq = time.time_ns()
-        request = {
-            "id": request_id,
-            "method": "pane.release_agent",
-            "params": {
-                "pane_id": pane_id,
-                "source": source,
-                "agent": "traex",
-                "seq": report_seq,
-            },
-        }
-        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        client.settimeout(0.2)
-        client.connect(socket_path)
-        client.sendall((json.dumps(request) + "\n").encode())
-        client.close()
-    except Exception:
-        pass
-END
-    fi
-}
-trap cleanup EXIT HUP INT TERM
-
+# in ~/.trae/hooks.json by the herdr plugin install action and invoked by
+# traex's hook system on lifecycle events.
 
 set -eu
 
@@ -97,14 +32,12 @@ import os
 import random
 import socket
 import time
-import subprocess
 
 source = "herdr:traex"
 action = os.environ.get("HERDR_ACTION", "")
 pane_id = os.environ.get("HERDR_PANE_ID")
 socket_path = os.environ.get("HERDR_SOCKET_PATH")
 hook_input_file = os.environ.get("HERDR_HOOK_INPUT_FILE")
-herdr_bin = os.environ.get("HERDR_BIN_PATH", "herdr")
 
 if not pane_id or not socket_path:
     raise SystemExit(0)
@@ -119,58 +52,55 @@ if hook_input_file:
     except Exception:
         hook_input = {}
 
-# Ignore subagent completion events
-is_subagent = bool(hook_input.get("agent_id"))
 hook_event_name = str(hook_input.get("hook_event_name") or "")
-if hook_event_name == "SubagentStop" or (is_subagent and action in ("idle", "release")):
+is_subagent = bool(hook_input.get("agent_id"))
+if hook_event_name == "SubagentStop":
+    # Subagent completion must not make the parent pane look done/idle early.
+    raise SystemExit(0)
+if is_subagent and action in ("idle", "release"):
     raise SystemExit(0)
 
-# Extract session id if present
 session_id = hook_input.get("session_id")
 agent_session_id = session_id if isinstance(session_id, str) and session_id else None
 
-# Prefer CLI for portability
+request_id = f"{source}:{int(time.time() * 1000)}:{random.randrange(1_000_000):06d}"
+report_seq = time.time_ns()
+if action == "release":
+    request = {
+        "id": request_id,
+        "method": "pane.release_agent",
+        "params": {
+            "pane_id": pane_id,
+            "source": source,
+            "agent": "traex",
+            "seq": report_seq,
+        },
+    }
+else:
+    request = {
+        "id": request_id,
+        "method": "pane.report_agent",
+        "params": {
+            "pane_id": pane_id,
+            "source": source,
+            "agent": "traex",
+            "state": action,
+            "seq": report_seq,
+        },
+    }
+    if agent_session_id:
+        request["params"]["agent_session_id"] = agent_session_id
+
 try:
-    if action == "release":
-        # Send idle first to ensure state updates before release
-        idle_cmd = [herdr_bin, "pane", "report-agent", pane_id, "--source", source, "--agent", "traex", "--state", "idle"]
-        subprocess.run(idle_cmd, capture_output=True, timeout=1, check=False)
-
-        cmd = [herdr_bin, "pane", "release-agent", pane_id, "--source", source, "--agent", "traex"]
-        subprocess.run(cmd, capture_output=True, timeout=1, check=False)
-    else:
-        # Always use direct socket API for more reliable state reporting
-        request_id = f"{source}:{int(time.time() * 1000)}:{random.randrange(1_000_000):06d}"
-        report_seq = time.time_ns()
-        request = {
-            "id": request_id,
-            "method": "pane.report_agent",
-            "params": {
-                "pane_id": pane_id,
-                "source": source,
-                "agent": "traex",
-                "state": action,
-                "seq": report_seq,
-            },
-        }
-        if agent_session_id:
-            request["params"]["agent_session_id"] = agent_session_id
-
-        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        client.settimeout(0.5)
-        client.connect(socket_path)
-        client.sendall((json.dumps(request) + "\n").encode())
-        try:
-            client.recv(4096)
-        except Exception:
-            pass
-        client.close()
-except Exception:
-    # Fallback to CLI if socket fails
+    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    client.settimeout(0.5)
+    client.connect(socket_path)
+    client.sendall((json.dumps(request) + "\n").encode())
     try:
-        if action != "release":
-            cmd = [herdr_bin, "pane", "report-agent", pane_id, "--source", source, "--agent", "traex", "--state", action]
-            subprocess.run(cmd, capture_output=True, timeout=1, check=False)
+        client.recv(4096)
     except Exception:
         pass
+    client.close()
+except Exception:
+    pass
 PY

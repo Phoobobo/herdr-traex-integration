@@ -42,7 +42,7 @@ SETTINGS_PATH="$TRAEX_DIR/hooks.json"
 if [ -f "$SETTINGS_PATH" ]; then
     SETTINGS=$(cat "$SETTINGS_PATH")
 else
-    SETTINGS="{}"
+    SETTINGS='{"version":1}'
 fi
 
 # Ensure hooks object exists
@@ -50,22 +50,32 @@ if ! echo "$SETTINGS" | jq -e '.hooks' >/dev/null 2>&1; then
     SETTINGS=$(echo "$SETTINGS" | jq '.hooks = {}')
 fi
 
+# Remove old Herdr entries before adding the current mapping so upgrades can
+# change state mappings without leaving stale commands behind.
+remove_herdr_hooks() {
+    local event="$1"
+    SETTINGS=$(echo "$SETTINGS" | jq --arg event "$event" --arg hook_path "$HOOK_PATH" '
+        if .hooks[$event] then
+            .hooks[$event] |= map(
+                .hooks |= map(select((.command // "") | contains($hook_path) | not))
+                | select(.hooks | length > 0)
+            )
+        else
+            .
+        end
+    ')
+}
+
+for event in SessionStart UserPromptSubmit PreToolUse PostToolUse PostToolUseFailure PermissionRequest Notification Stop SessionEnd; do
+    remove_herdr_hooks "$event"
+done
+
 # Function to add a hook
 add_hook() {
     local event="$1"
     local state="$2"
     local command="bash \"$HOOK_PATH\" $state"
 
-    # Check if hook already exists
-    existing=$(echo "$SETTINGS" | jq -r --arg event "$event" --arg cmd "$command" '
-        .hooks[$event] // [] | .[] | .hooks[]? | select(.command == $cmd)
-    ')
-    if [ -n "$existing" ]; then
-        echo "ℹ️  Hook for $event already exists, skipping"
-        return
-    fi
-
-    # Add the hook
     SETTINGS=$(echo "$SETTINGS" | jq --arg event "$event" --arg cmd "$command" '
         .hooks[$event] += [{
             "matcher": "*",
@@ -79,7 +89,9 @@ add_hook() {
     echo "✅ Added hook for $event → $state"
 }
 
-# Add hooks for traex lifecycle events
+# Add hooks for traex lifecycle events. Keep completion/end hooks as idle rather
+# than release: TraeX exits back to the shell in the same pane, and Herdr should
+# show that the prior agent run is done/idle instead of leaving a working source.
 add_hook "SessionStart" "idle"
 add_hook "UserPromptSubmit" "working"
 add_hook "PreToolUse" "working"
@@ -88,7 +100,10 @@ add_hook "PostToolUseFailure" "idle"
 add_hook "PermissionRequest" "blocked"
 add_hook "Notification" "idle"
 add_hook "Stop" "idle"
-add_hook "SessionEnd" "release"
+add_hook "SessionEnd" "idle"
+
+# Remove empty event entries left by old hook cleanup.
+SETTINGS=$(echo "$SETTINGS" | jq '.hooks |= with_entries(select(.value | length > 0))')
 
 # Write updated settings
 echo "$SETTINGS" | jq '.' > "$SETTINGS_PATH"
@@ -100,7 +115,7 @@ if [ -f "$CONFIG_PATH" ]; then
     if ! grep -q 'hooks = true' "$CONFIG_PATH" 2>/dev/null; then
         # Add hooks feature flag
         if grep -q "\[features\]" "$CONFIG_PATH"; then
-            # Add after [features] section
+            # Add after [features] section. BSD sed (macOS) requires this form.
             sed -i '' '/^\[features\]/a\
 hooks = true\
 ' "$CONFIG_PATH"
