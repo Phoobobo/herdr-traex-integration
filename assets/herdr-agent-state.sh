@@ -3,7 +3,7 @@
 # managed by herdr; reinstalling or updating the plugin overwrites this file.
 # add custom hooks beside this file instead of editing it.
 # HERDR_INTEGRATION_ID=traex
-# HERDR_INTEGRATION_VERSION=1
+# HERDR_INTEGRATION_VERSION=2
 #
 # Reports traex agent state changes to herdr. Registered as a Command hook
 # in ~/.traex/settings.json by the herdr plugin install action and
@@ -65,18 +65,16 @@ session_id = hook_input.get("session_id")
 agent_session_id = session_id if isinstance(session_id, str) and session_id else None
 
 # Prefer CLI for portability
-if action == "release":
-    cmd = [herdr_bin, "pane", "release-agent", pane_id, "--source", source, "--agent", "traex"]
-    subprocess.run(cmd, capture_output=True, timeout=1)
-else:
-    cmd = [
-        herdr_bin, "pane", "report-agent", pane_id,
-        "--source", source,
-        "--agent", "traex",
-        "--state", action
-    ]
-    if agent_session_id:
-        # Use socket API for agent_session_id since CLI may not expose it
+try:
+    if action == "release":
+        # Send idle first to ensure state updates before release
+        idle_cmd = [herdr_bin, "pane", "report-agent", pane_id, "--source", source, "--agent", "traex", "--state", "idle"]
+        subprocess.run(idle_cmd, capture_output=True, timeout=1, check=False)
+
+        cmd = [herdr_bin, "pane", "release-agent", pane_id, "--source", source, "--agent", "traex"]
+        subprocess.run(cmd, capture_output=True, timeout=1, check=False)
+    else:
+        # Always use direct socket API for more reliable state reporting
         request_id = f"{source}:{int(time.time() * 1000)}:{random.randrange(1_000_000):06d}"
         report_seq = time.time_ns()
         request = {
@@ -88,19 +86,26 @@ else:
                 "agent": "traex",
                 "state": action,
                 "seq": report_seq,
-                "agent_session_id": agent_session_id,
             },
         }
+        if agent_session_id:
+            request["params"]["agent_session_id"] = agent_session_id
+
+        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        client.settimeout(0.5)
+        client.connect(socket_path)
+        client.sendall((json.dumps(request) + "\n").encode())
         try:
-            client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            client.settimeout(0.5)
-            client.connect(socket_path)
-            client.sendall((json.dumps(request) + "\n").encode())
-            try:
-                client.recv(4096)
-            except Exception:
-                pass
-            client.close()
+            client.recv(4096)
         except Exception:
             pass
+        client.close()
+except Exception:
+    # Fallback to CLI if socket fails
+    try:
+        if action != "release":
+            cmd = [herdr_bin, "pane", "report-agent", pane_id, "--source", source, "--agent", "traex", "--state", action]
+            subprocess.run(cmd, capture_output=True, timeout=1, check=False)
+    except Exception:
+        pass
 PY
