@@ -1,0 +1,27 @@
+id = "com.traex.herdr-integration"
+name = "TraeX Integration"
+version = "0.1.0"
+min_herdr_version = "0.7.0"
+description = "Integrate TraeX agent state, lifecycle, and session restore with Herdr"
+platforms = ["linux", "macos", "windows"]
+
+# Install/uninstall actions
+[[actions]]
+id = "install"
+title = "Install TraeX integration hook"
+contexts = ["global"]
+command = ["bash", "scripts/install.sh"]
+
+[[actions]]
+id = "uninstall"
+title = "Uninstall TraeX integration hook"
+contexts = ["global"]
+command = ["bash", "scripts/uninstall.sh"]
+
+# Automatic pane state monitor fallback
+[[events]]
+on = "pane.created"
+command = ["bash", "scripts/monitor-pane.sh"]
+[[events]]
+on = "pane.focused"
+command = ["bash", "scripts/monitor-pane.sh"]
