@@ -89,16 +89,30 @@ add_hook() {
     echo "✅ Added hook for $event → $state"
 }
 
-# Add hooks for traex lifecycle events. Completion hooks return the active
-# session to idle, while SessionEnd releases Herdr authority so exited TraeX
-# sessions disappear from the agents pane.
+# Minimal TraeX lifecycle hook set, mirroring Herdr's built-in claude/codex
+# integrations. Herdr has no screen-based detector for TraeX (traex is not in
+# Herdr's Agent enum), so these hooks are the *only* source of state: every
+# transition we care about must be reported by a hook, and none of them may be
+# a spurious idle that Herdr cannot correct from the screen.
+#
+#   SessionStart      -> idle     agent ready, prompt visible
+#   UserPromptSubmit  -> working  user handed a task to the agent
+#   PreToolUse        -> working  keep working across a tool call...
+#   PostToolUse       -> working  ...and stay working after it (NOT idle: the
+#                                 agent is still mid-turn between tools; this
+#                                 also clears a stale "blocked" after a grant)
+#   PermissionRequest -> blocked  waiting on the human
+#   Stop              -> idle     turn finished, prompt visible again
+#   SessionEnd        -> release  drop authority so exited panes disappear
+#
+# PostToolUseFailure and Notification are intentionally omitted: a tool failure
+# does not end the turn (Stop still fires), and Notification is ambiguous
+# (it can arrive while the pane is genuinely blocked, so idle would be wrong).
 add_hook "SessionStart" "idle"
 add_hook "UserPromptSubmit" "working"
 add_hook "PreToolUse" "working"
-add_hook "PostToolUse" "idle"
-add_hook "PostToolUseFailure" "idle"
+add_hook "PostToolUse" "working"
 add_hook "PermissionRequest" "blocked"
-add_hook "Notification" "idle"
 add_hook "Stop" "idle"
 add_hook "SessionEnd" "release"
 
