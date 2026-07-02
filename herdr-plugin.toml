@@ -1,6 +1,6 @@
 id = "com.traex.herdr-integration"
 name = "TraeX Integration"
-version = "0.1.3"
+version = "0.1.4"
 min_herdr_version = "0.7.0"
 description = "Integrate TraeX agent state, lifecycle, and session restore with Herdr"
 platforms = ["linux", "macos", "windows"]

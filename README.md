@@ -8,7 +8,7 @@ PRs against Herdr required.
 
 - **Automatic state reporting**: TraeX state (idle / working / blocked) appears
   in Herdr's sidebar and agents pane.
-- **Minimal hook footprint**: 7 lifecycle hooks, one per real state transition,
+- **Minimal hook footprint**: 5 lifecycle hooks, one per user-visible state transition,
   plus a bounded per-turn watcher for TraeX question prompts that emit no hook.
 - **No Herdr core changes**: ships entirely as a Herdr plugin.
 - **Clean uninstall**: removes only the hooks and script this plugin owns.
@@ -94,23 +94,24 @@ Registered hooks:
 | ------------------ | -------------- | --- |
 | `SessionStart`     | `idle`         | agent ready, prompt visible |
 | `UserPromptSubmit` | `working`      | user handed the agent a task |
-| `PreToolUse`       | `working`      | stay working across a tool call |
-| `PostToolUse`      | `working`      | still mid-turn between tools; also clears a stale `blocked` after a permission grant |
 | `PermissionRequest`| `blocked`      | waiting on the human |
 | `Stop`             | `idle`         | turn finished, prompt visible again |
 | `SessionEnd`       | `release`      | drop authority so exited panes disappear |
 
 **Deliberately not hooked:**
 
-- `PostToolUse` → **`working`, not `idle`.** A completed tool call does not end
-  the turn — the agent keeps going. Reporting `idle` here caused the pane to
-  flicker working → idle → working on every tool call.
-- `PostToolUseFailure` is omitted: a tool failure doesn't end the turn (`Stop`
-  still fires when the turn actually ends).
+- `PreToolUse`, `PostToolUse`, and `PostToolUseFailure` are omitted: a submitted
+  turn is already `working`, a completed tool call does not end the turn, and
+  `Stop` still fires when the turn actually ends.
 - `Notification` is omitted: it's ambiguous and can fire while the pane is
   genuinely `blocked`, where reporting `idle` would be wrong.
 - `SubagentStop` is ignored inside the hook script so a subagent finishing can
   never make the parent pane look done early.
+
+Note: if a TraeX permission prompt reports `PermissionRequest` and then TraeX
+does not emit another lifecycle event after approval, Herdr may keep showing
+`blocked` until the turn's `Stop` hook fires. That avoids adding tool hooks that
+otherwise do not affect the visible state for normal turns.
 
 ### AskUserQuestion watcher
 

@@ -3,7 +3,7 @@
 # managed by herdr; reinstalling or updating the plugin overwrites this file.
 # add custom hooks beside this file instead of editing it.
 # HERDR_INTEGRATION_ID=traex
-# HERDR_INTEGRATION_VERSION=6
+# HERDR_INTEGRATION_VERSION=7
 #
 # Reports traex agent state changes to herdr. Registered as a Command hook
 # in ~/.trae/hooks.json by the herdr plugin install action and invoked by

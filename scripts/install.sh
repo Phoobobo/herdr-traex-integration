@@ -93,29 +93,22 @@ add_hook() {
     echo "✅ Added hook for $event → $state"
 }
 
-# Minimal TraeX lifecycle hook set, mirroring Herdr's built-in claude/codex
-# integrations. Herdr has no screen-based detector for TraeX (traex is not in
-# Herdr's Agent enum), so these hooks are the *only* source of state: every
-# transition we care about must be reported by a hook, and none of them may be
-# a spurious idle that Herdr cannot correct from the screen.
+# Minimal TraeX lifecycle hook set. Herdr has no screen-based detector for
+# TraeX (traex is not in Herdr's Agent enum), so these hooks report only the
+# semantic transitions that matter for Herdr's sidebar.
 #
 #   SessionStart      -> idle     agent ready, prompt visible
 #   UserPromptSubmit  -> working  user handed a task to the agent
-#   PreToolUse        -> working  keep working across a tool call...
-#   PostToolUse       -> working  ...and stay working after it (NOT idle: the
-#                                 agent is still mid-turn between tools; this
-#                                 also clears a stale "blocked" after a grant)
 #   PermissionRequest -> blocked  waiting on the human
 #   Stop              -> idle     turn finished, prompt visible again
 #   SessionEnd        -> release  drop authority so exited panes disappear
 #
-# PostToolUseFailure and Notification are intentionally omitted: a tool failure
-# does not end the turn (Stop still fires), and Notification is ambiguous
-# (it can arrive while the pane is genuinely blocked, so idle would be wrong).
+# Tool lifecycle hooks are intentionally omitted: UserPromptSubmit already marks
+# the turn working, Stop marks it idle, and extra tool hooks add churn without a
+# user-visible state change. Notification is also omitted: it is ambiguous and
+# can arrive while the pane is genuinely blocked.
 add_hook "SessionStart" "idle"
 add_hook "UserPromptSubmit" "working"
-add_hook "PreToolUse" "working"
-add_hook "PostToolUse" "working"
 add_hook "PermissionRequest" "blocked"
 add_hook "Stop" "idle"
 add_hook "SessionEnd" "release"
