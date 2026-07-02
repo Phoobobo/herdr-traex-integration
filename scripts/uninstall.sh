@@ -18,13 +18,21 @@ if [ ! -d "$TRAEX_DIR" ]; then
     exit 0
 fi
 
-# Remove hook script
+# Remove hook scripts
 HOOK_PATH="$TRAEX_DIR/hooks/herdr-agent-state.sh"
 if [ -f "$HOOK_PATH" ]; then
     rm "$HOOK_PATH"
     echo "✅ Removed hook script at $HOOK_PATH"
 else
     echo "ℹ️  No hook script found at $HOOK_PATH"
+fi
+
+QUESTION_WATCH_PATH="$TRAEX_DIR/hooks/herdr-question-watch.sh"
+if [ -f "$QUESTION_WATCH_PATH" ]; then
+    rm "$QUESTION_WATCH_PATH"
+    echo "✅ Removed question watcher at $QUESTION_WATCH_PATH"
+else
+    echo "ℹ️  No question watcher found at $QUESTION_WATCH_PATH"
 fi
 
 # Update traex settings to remove Herdr hooks

@@ -28,14 +28,18 @@ fi
 HOOKS_DIR="$TRAEX_DIR/hooks"
 mkdir -p "$HOOKS_DIR"
 
-# Copy hook script
+# Copy hook scripts
 HOOK_PATH="$HOOKS_DIR/herdr-agent-state.sh"
+QUESTION_WATCH_PATH="$HOOKS_DIR/herdr-question-watch.sh"
 # Use script location to find assets dir when not running via Herdr plugin
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ASSETS_DIR="${HERDR_PLUGIN_ROOT:-$SCRIPT_DIR/..}/assets"
 cp "$ASSETS_DIR/herdr-agent-state.sh" "$HOOK_PATH"
 chmod +x "$HOOK_PATH"
 echo "✅ Copied hook script to $HOOK_PATH"
+cp "$ASSETS_DIR/herdr-question-watch.sh" "$QUESTION_WATCH_PATH"
+chmod +x "$QUESTION_WATCH_PATH"
+echo "✅ Copied question watcher to $QUESTION_WATCH_PATH"
 
 # Update traex settings
 SETTINGS_PATH="$TRAEX_DIR/hooks.json"

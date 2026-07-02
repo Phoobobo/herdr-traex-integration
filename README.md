@@ -8,8 +8,8 @@ PRs against Herdr required.
 
 - **Automatic state reporting**: TraeX state (idle / working / blocked) appears
   in Herdr's sidebar and agents pane.
-- **Minimal hook footprint**: 7 lifecycle hooks, one per real state transition —
-  no background monitor, no polling, no stale state.
+- **Minimal hook footprint**: 7 lifecycle hooks, one per real state transition,
+  plus a bounded per-turn watcher for TraeX question prompts that emit no hook.
 - **No Herdr core changes**: ships entirely as a Herdr plugin.
 - **Clean uninstall**: removes only the hooks and script this plugin owns.
 
@@ -29,6 +29,13 @@ later correct from the screen (because it can't).
 That constraint drives the mapping below: it mirrors Herdr's own `claude`/
 `codex` integrations, minus the events that would produce a spurious `idle`.
 
+One TraeX UI state is not emitted as a hook: `AskUserQuestion` displays an
+interactive question modal and blocks waiting for the user, but TraeX fires no
+`PreToolUse`, `PermissionRequest`, or `Notification` while the modal is visible.
+To cover that gap without a long-lived monitor, the `UserPromptSubmit` hook
+starts a bounded watcher that reads the visible Herdr pane for the question
+modal and reports `blocked` only when the modal is actually present.
+
 ## Requirements
 
 - Herdr >= 0.7.0 (the plugin system was introduced in 0.7.0)
@@ -46,9 +53,9 @@ herdr plugin action invoke com.traex.herdr-integration.install
 ```
 
 `herdr plugin install` registers the plugin under Herdr-managed plugin data.
-The `install` action then copies the hook script into `~/.trae/hooks/` and
-registers it in `~/.trae/hooks.json`. Restart any running TraeX session so it
-picks up the new hooks.
+The `install` action then copies the hook scripts into `~/.trae/hooks/` and
+registers the lifecycle hook in `~/.trae/hooks.json`. Restart any running TraeX
+session so it picks up the new hooks.
 
 ### Local development
 
@@ -68,15 +75,16 @@ herdr plugin action invoke com.traex.herdr-integration.uninstall
 herdr plugin uninstall com.traex.herdr-integration
 ```
 
-The `uninstall` action removes the hook script and this plugin's entries from
+The `uninstall` action removes the hook scripts and this plugin's entries from
 `~/.trae/hooks.json` (it leaves the `[features] hooks = true` flag alone, since
 other tools may rely on it). `herdr plugin uninstall` then unregisters the
 plugin and removes the managed checkout.
 
 ## How it works
 
-The install action writes `~/.trae/hooks/herdr-agent-state.sh` and registers it
-in `~/.trae/hooks.json`. On each TraeX lifecycle event the hook reports semantic
+The install action writes `~/.trae/hooks/herdr-agent-state.sh` and
+`~/.trae/hooks/herdr-question-watch.sh`, then registers the lifecycle hook in
+`~/.trae/hooks.json`. On each TraeX lifecycle event the hook reports semantic
 state to Herdr over its local socket (`pane.report_agent` / `pane.release_agent`,
 using `HERDR_SOCKET_PATH` and `HERDR_PANE_ID` injected into every Herdr pane).
 
@@ -103,6 +111,26 @@ Registered hooks:
   genuinely `blocked`, where reporting `idle` would be wrong.
 - `SubagentStop` is ignored inside the hook script so a subagent finishing can
   never make the parent pane look done early.
+
+### AskUserQuestion watcher
+
+`AskUserQuestion` is special: live testing showed that TraeX fires no hook while
+the question modal is blocking. The `UserPromptSubmit` hook therefore starts
+`herdr-question-watch.sh`, a short-lived watcher that:
+
+- runs only inside Herdr panes,
+- holds a per-pane lock so duplicate watchers do not pile up,
+- reads the visible pane through `herdr pane read`,
+- matches the question UI (`Question ... unanswered`,
+  `enter to submit answer`, `esc to interrupt`),
+- reports `blocked` from source `herdr:traex-question` with custom status
+  `awaiting answer`,
+- exits after it reports or after `HERDR_TRAEX_QUESTION_WATCH_SECONDS` seconds
+  (default: 90).
+
+The watcher never reports `idle` or `working`; normal lifecycle hooks still own
+those transitions. When the user answers the question, TraeX fires `Stop` and
+the main hook returns the pane to `idle`.
 
 ### Session id forwarding
 

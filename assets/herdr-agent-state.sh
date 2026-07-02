@@ -3,7 +3,7 @@
 # managed by herdr; reinstalling or updating the plugin overwrites this file.
 # add custom hooks beside this file instead of editing it.
 # HERDR_INTEGRATION_ID=traex
-# HERDR_INTEGRATION_VERSION=5
+# HERDR_INTEGRATION_VERSION=6
 #
 # Reports traex agent state changes to herdr. Registered as a Command hook
 # in ~/.trae/hooks.json by the herdr plugin install action and invoked by
@@ -31,6 +31,7 @@ import json
 import os
 import random
 import socket
+import subprocess
 import time
 
 source = "herdr:traex"
@@ -59,6 +60,23 @@ if hook_event_name == "SubagentStop":
     raise SystemExit(0)
 if is_subagent and action in ("idle", "release"):
     raise SystemExit(0)
+
+if action == "working" and hook_event_name == "UserPromptSubmit":
+    watcher_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "herdr-question-watch.sh",
+    )
+    if os.path.isfile(watcher_path) and os.access(watcher_path, os.X_OK):
+        try:
+            subprocess.Popen(
+                [watcher_path],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception:
+            pass
 
 session_id = hook_input.get("session_id")
 agent_session_id = session_id if isinstance(session_id, str) and session_id else None
